@@ -20,13 +20,19 @@
             
             <section class="card">
                 <h2>Relatório do Mês</h2>
-                <div id="report-grid" class="report-grid">
-                    </div>
+                <div id="report-grid" class="report-grid"></div>
                 <button id="export-csv-btn">Exportar para CSV (Excel)</button>
             </section>
 
             <section class="card">
                 <h2>Calculadora de Saída</h2>
+                <div class="input-group" style="margin-bottom: 15px;">
+                    <label>Tipo de Expediente (Hoje)</label>
+                    <select id="calc-day-type">
+                        <option value="normal">Normal (8h/dia)</option>
+                        <option value="special">Especial (8h às 14h)</option>
+                    </select>
+                </div>
                 <div class="time-inputs">
                     <div class="input-group"><label>Entrada 1 (hoje)</label><input type="time" id="calc-time1"></div>
                     <div class="input-group"><label>Saída 1 (hoje)</label><input type="time" id="calc-time2"></div>
@@ -35,22 +41,34 @@
                 <button id="calculate-exit-btn">Calcular Horários de Saída</button>
                 <div id="exit-result" class="result-box hidden"></div>
             </section>
+            
             <section class="card">
                 <h2>Gerenciar Feriados</h2>
                 <div class="holiday-manager"><input type="date" id="holiday-date"><button id="add-holiday-btn">Adicionar Feriado</button></div>
                 <ul id="holidays-list"></ul>
             </section>
+            
             <section class="calendar-container">
                 <div class="calendar-header"><div>Dia</div><div>Horários</div><div>Saldo</div></div>
                 <div id="calendar-grid"></div>
             </section>
         </main>
     </div>
+
     <div id="entry-modal" class="modal-overlay hidden">
         <div class="modal-content">
             <button class="close-modal-btn">&times;</button>
             <h2 id="modal-title">Registrar Horários</h2>
             <form id="modal-form">
+                <div class="input-group" style="margin-bottom: 15px;">
+                    <label>Tipo do Dia</label>
+                    <select id="modal-day-type" style="width: 100%; box-sizing: border-box;">
+                        <option value="normal">Dia Normal (8h)</option>
+                        <option value="special">Expediente Especial (8h às 14h)</option>
+                        <option value="facultativo">Ponto Facultativo</option>
+                    </select>
+                </div>
+                
                 <div class="time-inputs">
                     <div class="input-group"><label>Entrada 1</label><input type="time" id="modal-time1"></div>
                     <div class="input-group"><label>Saída 1</label><input type="time" id="modal-time2"></div>
@@ -88,7 +106,7 @@
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/service-worker.js').then(reg => console.log('ServiceWorker registered'), err => console.log('ServiceWorker registration failed: ', err));
+                navigator.serviceWorker.register('/service-worker.js').then(reg => console.log('SW registrado'), err => console.log('SW falhou: ', err));
             });
         }
     </script>

@@ -1,5 +1,4 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // --- INICIALIZAÇÃO DO FIREBASE ---
     const db = firebase.firestore();
     let unsubscribeFromData;
 
@@ -14,6 +13,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalTitle = document.getElementById('modal-title');
     const modalForm = document.getElementById('modal-form');
     const modalLiveBalance = document.getElementById('modal-live-balance');
+    const modalDayType = document.getElementById('modal-day-type'); // NOVO
+    const calcDayType = document.getElementById('calc-day-type'); // NOVO
     const modalTimeInputs = [
         document.getElementById('modal-time1'),
         document.getElementById('modal-time2'),
@@ -29,7 +30,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const exitResultEl = document.getElementById('exit-result');
 
     // --- ESTADO E CONSTANTES ---
-    const WORKDAY_MINUTES = 8 * 60;
+    const WORKDAY_MINUTES = 8 * 60; // 480 mins
+    const SPECIAL_WORKDAY_MINUTES = 345; // 5h 45m (8h às 14h com 15m intervalo)
     const BALANCE_LIMIT_MINUTES = 90;
     const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
     let currentMonthData = { holidays: [], records: {} };
@@ -66,8 +68,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const afternoonWork = (t3 > 0 && t4 > 0 && t4 > t3) ? t4 - t3 : 0;
         const totalWorkMinutes = morningWork + afternoonWork;
         
+        let targetMins = WORKDAY_MINUTES;
+        if (modalDayType.value === 'special') targetMins = SPECIAL_WORKDAY_MINUTES;
+        if (modalDayType.value === 'facultativo') targetMins = 0;
+
         if (totalWorkMinutes > 0 || (t1 > 0 && t2 > 0) || (t3 > 0 && t4 > 0)) {
-            const balance = totalWorkMinutes - WORKDAY_MINUTES;
+            const balance = totalWorkMinutes - targetMins;
             modalLiveBalance.textContent = formatMinutes(balance);
             modalLiveBalance.style.color = balance < 0 ? 'var(--danger-color)' : 'var(--success-color)';
         } else {
@@ -110,26 +116,44 @@ document.addEventListener('DOMContentLoaded', () => {
             const dayString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
             const card = document.createElement('div');
             card.className = 'day-card';
+            
             const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
             const isHoliday = (currentMonthData.holidays || []).includes(dayString);
+            const record = currentMonthData.records ? currentMonthData.records[day] : null;
+            const dayType = record && record.dayType ? record.dayType : 'normal';
+
             let dayBalance = '-';
             let dayTimes = 'Nenhum registro';
-            const record = currentMonthData.records ? currentMonthData.records[day] : null;
 
-            if (record && record.times) {
+            // Se for facultativo salvo no BD mas sem horários batidos
+            if (dayType === 'facultativo' && (!record || !record.times || !record.times.some(t => t))) {
+                dayTimes = 'Ponto Facultativo';
+                dayBalance = '00:00';
+                card.classList.add('holiday'); // Pinta de cinza igual feriado
+            } 
+            else if (record && record.times && record.times.some(t => t)) {
+                let targetMins = WORKDAY_MINUTES;
+                if (isHoliday || dayType === 'facultativo') targetMins = 0;
+                else if (dayType === 'special') targetMins = SPECIAL_WORKDAY_MINUTES;
+
                 const totalWork = (timeToMinutes(record.times[1]) - timeToMinutes(record.times[0])) + (timeToMinutes(record.times[3]) - timeToMinutes(record.times[2]));
                 if (!isNaN(totalWork) && totalWork > 0) {
-                    const balance = totalWork - WORKDAY_MINUTES;
+                    const balance = totalWork - targetMins;
                     dayBalance = formatMinutes(balance);
                 }
+                
                 dayTimes = `${record.times[0] || '--:--'}-${record.times[1] || '--:--'} / ${record.times[2] || '--:--'}-${record.times[3] || '--:--'}`;
+                if (dayType === 'special') dayTimes += ' ⭐ (8h-14h)';
+                if (dayType === 'facultativo') dayTimes += ' (Facultativo)';
             }
 
             card.innerHTML = `<div class="day-info">${day} <span>${date.toLocaleDateString('pt-BR', { weekday: 'short' })}</span></div><div class="day-times">${dayTimes}</div><div class="day-balance" style="color: ${dayBalance.startsWith('−') ? 'var(--danger-color)' : 'var(--success-color)'}">${dayBalance}</div>`;
+            
             if (isWeekend) card.classList.add('weekend');
             if (isHoliday) { card.classList.add('holiday'); card.querySelector('.day-times').textContent = 'Feriado'; }
+            
             if (!isWeekend && !isHoliday) {
-                card.classList.add('workday');
+                if (dayType !== 'facultativo') card.classList.add('workday');
                 card.dataset.day = day;
                 card.addEventListener('click', () => openModal(day, record));
             }
@@ -138,39 +162,39 @@ document.addEventListener('DOMContentLoaded', () => {
         renderHolidays(year, month);
     };
     
-    // ATUALIZADA para incluir todas as médias
     const calculateMonthStats = (year, month) => {
         const stats = { totalWorked: 0, finalBalance: 0, totalPositive: 0, totalNegative: 0, avgEntry1: NaN, avgExit1: NaN, avgEntry2: NaN, avgExit2: NaN };
-        const entry1Minutes = [];
-        const exit1Minutes = [];
-        const entry2Minutes = [];
-        const exit2Minutes = [];
+        const entry1Minutes = []; const exit1Minutes = []; const entry2Minutes = []; const exit2Minutes = [];
 
         if (!currentMonthData.records) return stats;
 
         for (const day in currentMonthData.records) {
             const record = currentMonthData.records[day];
-             if (record && record.times) {
-                // Adiciona às listas de média
+             if (record && record.times && record.times.some(t => t)) {
                 if (record.times[0]) entry1Minutes.push(timeToMinutes(record.times[0]));
                 if (record.times[1]) exit1Minutes.push(timeToMinutes(record.times[1]));
                 if (record.times[2]) entry2Minutes.push(timeToMinutes(record.times[2]));
                 if (record.times[3]) exit2Minutes.push(timeToMinutes(record.times[3]));
 
-                if (record.times.some(t => t)) {
-                    const totalWork = (timeToMinutes(record.times[1]) - timeToMinutes(record.times[0])) + (timeToMinutes(record.times[3]) - timeToMinutes(record.times[2]));
-                    if (!isNaN(totalWork) && totalWork > 0) {
-                        const balance = totalWork - WORKDAY_MINUTES;
-                        stats.totalWorked += totalWork;
-                        stats.finalBalance += balance;
-                        if (balance > 0) stats.totalPositive += balance;
-                        if (balance < 0) stats.totalNegative += balance;
-                    }
+                const dayType = record.dayType || 'normal';
+                const dayString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const isHoliday = (currentMonthData.holidays || []).includes(dayString);
+
+                let targetMins = WORKDAY_MINUTES;
+                if (isHoliday || dayType === 'facultativo') targetMins = 0;
+                else if (dayType === 'special') targetMins = SPECIAL_WORKDAY_MINUTES;
+
+                const totalWork = (timeToMinutes(record.times[1]) - timeToMinutes(record.times[0])) + (timeToMinutes(record.times[3]) - timeToMinutes(record.times[2]));
+                if (!isNaN(totalWork) && totalWork > 0) {
+                    const balance = totalWork - targetMins;
+                    stats.totalWorked += totalWork;
+                    stats.finalBalance += balance;
+                    if (balance > 0) stats.totalPositive += balance;
+                    if (balance < 0) stats.totalNegative += balance;
                 }
             }
         }
         
-        // Calcula as médias
         const calculateAverage = (arr) => arr.length > 0 ? arr.reduce((sum, val) => sum + val, 0) / arr.length : NaN;
         stats.avgEntry1 = calculateAverage(entry1Minutes);
         stats.avgExit1 = calculateAverage(exit1Minutes);
@@ -180,7 +204,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return stats;
     };
     
-    // ATUALIZADA para exibir todas as médias
     const generateReport = (year, month) => {
         const monthStats = calculateMonthStats(year, month);
         reportGrid.innerHTML = `
@@ -199,11 +222,14 @@ document.addEventListener('DOMContentLoaded', () => {
         currentDayToEdit = day;
         modalTitle.textContent = `Registrar Horários - Dia ${day}`;
         modalForm.reset();
+        
+        modalDayType.value = (record && record.dayType) ? record.dayType : 'normal';
+
         if (record && record.times) {
-            modalTimeInputs[0].value = record.times[0];
-            modalTimeInputs[1].value = record.times[1];
-            modalTimeInputs[2].value = record.times[2];
-            modalTimeInputs[3].value = record.times[3];
+            modalTimeInputs[0].value = record.times[0] || '';
+            modalTimeInputs[1].value = record.times[1] || '';
+            modalTimeInputs[2].value = record.times[2] || '';
+            modalTimeInputs[3].value = record.times[3] || '';
             deleteEntryBtn.classList.remove('hidden');
         } else {
             deleteEntryBtn.classList.add('hidden');
@@ -249,7 +275,9 @@ document.addEventListener('DOMContentLoaded', () => {
         monthSelect.addEventListener('change', listenToMonthData);
         yearSelect.addEventListener('change', listenToMonthData);
         todayBtn.addEventListener('click', () => { const today = new Date(); yearSelect.value = today.getFullYear(); monthSelect.value = today.getMonth(); listenToMonthData(); });
+        
         modalTimeInputs.forEach(input => { input.addEventListener('input', updateLiveBalance); });
+        modalDayType.addEventListener('change', updateLiveBalance); // Recalcula se mudar o tipo do dia
 
         modalForm.addEventListener('submit', (e) => {
             e.preventDefault();
@@ -257,7 +285,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const month = parseInt(monthSelect.value);
             const docId = `${year}-${String(month + 1).padStart(2, '0')}`;
             const docRef = db.collection('pontoData').doc(docId);
-            const recordData = { times: [ modalTimeInputs[0].value, modalTimeInputs[1].value, modalTimeInputs[2].value, modalTimeInputs[3].value ] };
+            
+            const recordData = { 
+                times: [ modalTimeInputs[0].value, modalTimeInputs[1].value, modalTimeInputs[2].value, modalTimeInputs[3].value ],
+                dayType: modalDayType.value 
+            };
+            
             docRef.set({ records: { [currentDayToEdit]: recordData } }, { merge: true }).catch(error => console.error("Erro ao salvar registro:", error));
             closeModal();
         });
@@ -295,29 +328,58 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert('Preencha os 3 primeiros horários de hoje para calcular.');
                 return;
             }
+            
+            // Verifica o tipo de dia selecionado na calculadora
+            const calcTargetMins = calcDayType.value === 'special' ? SPECIAL_WORKDAY_MINUTES : WORKDAY_MINUTES;
+
             const year = parseInt(yearSelect.value);
             const month = parseInt(monthSelect.value);
             const currentBalance = calculateMonthStats(year, month).finalBalance;
             const morningWork = timeToMinutes(t2) - timeToMinutes(t1);
+            
             const dailyBalanceNeededZero = 0 - currentBalance;
-            const totalWorkNeededZero = WORKDAY_MINUTES + dailyBalanceNeededZero;
+            const totalWorkNeededZero = calcTargetMins + dailyBalanceNeededZero;
             const afternoonWorkNeededZero = totalWorkNeededZero - morningWork;
             const idealExitTimeZero = timeToMinutes(t3) + afternoonWorkNeededZero;
+            
             const dailyBalanceNeededMin = -BALANCE_LIMIT_MINUTES - currentBalance;
-            const totalWorkNeededMin = WORKDAY_MINUTES + dailyBalanceNeededMin;
+            const totalWorkNeededMin = calcTargetMins + dailyBalanceNeededMin;
             const afternoonWorkNeededMin = totalWorkNeededMin - morningWork;
             const idealExitTimeMin = timeToMinutes(t3) + afternoonWorkNeededMin;
+            
             const dailyBalanceNeededMax = BALANCE_LIMIT_MINUTES - currentBalance;
-            const totalWorkNeededMax = WORKDAY_MINUTES + dailyBalanceNeededMax;
+            const totalWorkNeededMax = calcTargetMins + dailyBalanceNeededMax;
             const afternoonWorkNeededMax = totalWorkNeededMax - morningWork;
             const idealExitTimeMax = timeToMinutes(t3) + afternoonWorkNeededMax;
+            
             exitResultEl.innerHTML = `<p>Para ficar com saldo de <strong>-01:30</strong>, saia às: <strong>${minutesToTime(idealExitTimeMin)}</strong></p><p>Para ficar com saldo <strong>ZERADO</strong>, saia às: <strong>${minutesToTime(idealExitTimeZero)}</strong></p><p>Para ficar com saldo de <strong>+01:30</strong>, saia às: <strong>${minutesToTime(idealExitTimeMax)}</strong></p>`;
             exitResultEl.classList.remove('hidden');
         });
     };
     
     const exportToCSV = (year, month) => {
-        const monthData = currentMonthData; let csvContent = "data:text/csv;charset=utf-8,Dia,Status,Entrada 1,Saida 1,Entrada 2,Saida 2,Total Trabalhado,Saldo Dia\n"; const daysInMonth = new Date(year, month + 1, 0).getDate(); for (let day = 1; day <= daysInMonth; day++) { const date = new Date(year, month, day); const dayOfWeek = date.getDay(); const dayString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`; let row = `${day},`; const record = monthData.records ? monthData.records[day] : null; if (dayOfWeek === 0 || dayOfWeek === 6) { row += "Fim de Semana,,,,,,,\n"; } else if ((monthData.holidays || []).includes(dayString)) { row += "Feriado,,,,,,,\n"; } else if (record && record.times && record.times.some(t => t)) { const totalWork = (timeToMinutes(record.times[1]) - timeToMinutes(record.times[0])) + (timeToMinutes(record.times[3]) - timeToMinutes(record.times[2])); const balance = totalWork - WORKDAY_MINUTES; row += `Trabalhado,${record.times.join(',')},${formatMinutes(totalWork, false)},${formatMinutes(balance)}\n`; } else { row += "Nao preenchido,,,,,,,\n"; } csvContent += row; } const encodedUri = encodeURI(csvContent); const link = document.createElement("a"); link.setAttribute("href", encodedUri); link.setAttribute("download", `relatorio_ponto_${year}_${monthNames[month]}.csv`); document.body.appendChild(link); link.click(); document.body.removeChild(link);
+        const monthData = currentMonthData; let csvContent = "data:text/csv;charset=utf-8,Dia,Status,Entrada 1,Saida 1,Entrada 2,Saida 2,Total Trabalhado,Saldo Dia\n"; const daysInMonth = new Date(year, month + 1, 0).getDate(); 
+        for (let day = 1; day <= daysInMonth; day++) { 
+            const date = new Date(year, month, day); const dayOfWeek = date.getDay(); const dayString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`; let row = `${day},`; 
+            const record = monthData.records ? monthData.records[day] : null; 
+            const dayType = record && record.dayType ? record.dayType : 'normal';
+
+            if (dayOfWeek === 0 || dayOfWeek === 6) { row += "Fim de Semana,,,,,,,\n"; } 
+            else if ((monthData.holidays || []).includes(dayString)) { row += "Feriado,,,,,,,\n"; } 
+            else if (dayType === 'facultativo' && (!record || !record.times || !record.times.some(t => t))) { row += "Ponto Facultativo,,,,,,,\n"; }
+            else if (record && record.times && record.times.some(t => t)) { 
+                let targetMins = WORKDAY_MINUTES;
+                if (dayType === 'facultativo') targetMins = 0;
+                else if (dayType === 'special') targetMins = SPECIAL_WORKDAY_MINUTES;
+
+                const totalWork = (timeToMinutes(record.times[1]) - timeToMinutes(record.times[0])) + (timeToMinutes(record.times[3]) - timeToMinutes(record.times[2])); 
+                const balance = totalWork - targetMins; 
+                let statusStr = dayType === 'special' ? 'Especial (8h-14h)' : (dayType === 'facultativo' ? 'Facultativo Trab.' : 'Trabalhado');
+                row += `${statusStr},${record.times.join(',')},${formatMinutes(totalWork, false)},${formatMinutes(balance)}\n`; 
+            } else { row += "Nao preenchido,,,,,,,\n"; } 
+            csvContent += row; 
+        } 
+        const encodedUri = encodeURI(csvContent); const link = document.createElement("a"); link.setAttribute("href", encodedUri); link.setAttribute("download", `relatorio_ponto_${year}_${monthNames[month]}.csv`); document.body.appendChild(link); link.click(); document.body.removeChild(link);
     };
 
     init();
