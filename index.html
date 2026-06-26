@@ -31,7 +31,12 @@
                     <select id="calc-day-type">
                         <option value="normal">Normal (8h/dia)</option>
                         <option value="special">Especial (8h às 14h)</option>
+                        <option value="custom">Personalizado</option>
                     </select>
+                </div>
+                <div id="calc-custom-hours-group" class="input-group hidden" style="margin-bottom: 15px;">
+                    <label>Carga Horária (Ex: 06:00)</label>
+                    <input type="time" id="calc-custom-hours">
                 </div>
                 <div class="time-inputs">
                     <div class="input-group"><label>Entrada 1 (hoje)</label><input type="time" id="calc-time1"></div>
@@ -66,7 +71,12 @@
                         <option value="normal">Dia Normal (8h)</option>
                         <option value="special">Expediente Especial (8h às 14h)</option>
                         <option value="facultativo">Ponto Facultativo</option>
+                        <option value="custom">Personalizado (Definir Carga)</option>
                     </select>
+                </div>
+                <div id="modal-custom-hours-group" class="input-group hidden" style="margin-bottom: 15px;">
+                    <label>Carga Horária do Dia (Ex: 06:00)</label>
+                    <input type="time" id="modal-custom-hours" style="width: 100%; box-sizing: border-box;">
                 </div>
                 
                 <div class="time-inputs">

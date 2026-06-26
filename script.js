@@ -13,8 +13,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalTitle = document.getElementById('modal-title');
     const modalForm = document.getElementById('modal-form');
     const modalLiveBalance = document.getElementById('modal-live-balance');
-    const modalDayType = document.getElementById('modal-day-type'); // NOVO
-    const calcDayType = document.getElementById('calc-day-type'); // NOVO
+    const modalDayType = document.getElementById('modal-day-type');
+    const calcDayType = document.getElementById('calc-day-type');
+    
+    // NOVOS ELEMENTOS PERSONALIZADOS
+    const modalCustomHoursGroup = document.getElementById('modal-custom-hours-group');
+    const modalCustomHours = document.getElementById('modal-custom-hours');
+    const calcCustomHoursGroup = document.getElementById('calc-custom-hours-group');
+    const calcCustomHours = document.getElementById('calc-custom-hours');
+
     const modalTimeInputs = [
         document.getElementById('modal-time1'),
         document.getElementById('modal-time2'),
@@ -31,7 +38,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- ESTADO E CONSTANTES ---
     const WORKDAY_MINUTES = 8 * 60; // 480 mins
-    const SPECIAL_WORKDAY_MINUTES = 345; // 5h 45m (8h às 14h com 15m intervalo)
+    const SPECIAL_WORKDAY_MINUTES = 345; // 5h 45m
     const BALANCE_LIMIT_MINUTES = 90;
     const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
     let currentMonthData = { holidays: [], records: {} };
@@ -71,6 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let targetMins = WORKDAY_MINUTES;
         if (modalDayType.value === 'special') targetMins = SPECIAL_WORKDAY_MINUTES;
         if (modalDayType.value === 'facultativo') targetMins = 0;
+        if (modalDayType.value === 'custom') targetMins = timeToMinutes(modalCustomHours.value) || 0;
 
         if (totalWorkMinutes > 0 || (t1 > 0 && t2 > 0) || (t3 > 0 && t4 > 0)) {
             const balance = totalWorkMinutes - targetMins;
@@ -125,16 +133,16 @@ document.addEventListener('DOMContentLoaded', () => {
             let dayBalance = '-';
             let dayTimes = 'Nenhum registro';
 
-            // Se for facultativo salvo no BD mas sem horários batidos
             if (dayType === 'facultativo' && (!record || !record.times || !record.times.some(t => t))) {
                 dayTimes = 'Ponto Facultativo';
                 dayBalance = '00:00';
-                card.classList.add('holiday'); // Pinta de cinza igual feriado
+                card.classList.add('holiday'); 
             } 
             else if (record && record.times && record.times.some(t => t)) {
                 let targetMins = WORKDAY_MINUTES;
                 if (isHoliday || dayType === 'facultativo') targetMins = 0;
                 else if (dayType === 'special') targetMins = SPECIAL_WORKDAY_MINUTES;
+                else if (dayType === 'custom') targetMins = record.customMinutes || 0;
 
                 const totalWork = (timeToMinutes(record.times[1]) - timeToMinutes(record.times[0])) + (timeToMinutes(record.times[3]) - timeToMinutes(record.times[2]));
                 if (!isNaN(totalWork) && totalWork > 0) {
@@ -145,6 +153,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 dayTimes = `${record.times[0] || '--:--'}-${record.times[1] || '--:--'} / ${record.times[2] || '--:--'}-${record.times[3] || '--:--'}`;
                 if (dayType === 'special') dayTimes += ' ⭐ (8h-14h)';
                 if (dayType === 'facultativo') dayTimes += ' (Facultativo)';
+                if (dayType === 'custom') dayTimes += ` ⚙️ (${minutesToTime(record.customMinutes)})`;
             }
 
             card.innerHTML = `<div class="day-info">${day} <span>${date.toLocaleDateString('pt-BR', { weekday: 'short' })}</span></div><div class="day-times">${dayTimes}</div><div class="day-balance" style="color: ${dayBalance.startsWith('−') ? 'var(--danger-color)' : 'var(--success-color)'}">${dayBalance}</div>`;
@@ -183,6 +192,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 let targetMins = WORKDAY_MINUTES;
                 if (isHoliday || dayType === 'facultativo') targetMins = 0;
                 else if (dayType === 'special') targetMins = SPECIAL_WORKDAY_MINUTES;
+                else if (dayType === 'custom') targetMins = record.customMinutes || 0;
 
                 const totalWork = (timeToMinutes(record.times[1]) - timeToMinutes(record.times[0])) + (timeToMinutes(record.times[3]) - timeToMinutes(record.times[2]));
                 if (!isNaN(totalWork) && totalWork > 0) {
@@ -224,6 +234,14 @@ document.addEventListener('DOMContentLoaded', () => {
         modalForm.reset();
         
         modalDayType.value = (record && record.dayType) ? record.dayType : 'normal';
+
+        if (modalDayType.value === 'custom') {
+            modalCustomHoursGroup.classList.remove('hidden');
+            modalCustomHours.value = (record && record.customMinutes) ? minutesToTime(record.customMinutes) : '';
+        } else {
+            modalCustomHoursGroup.classList.add('hidden');
+            modalCustomHours.value = '';
+        }
 
         if (record && record.times) {
             modalTimeInputs[0].value = record.times[0] || '';
@@ -277,7 +295,20 @@ document.addEventListener('DOMContentLoaded', () => {
         todayBtn.addEventListener('click', () => { const today = new Date(); yearSelect.value = today.getFullYear(); monthSelect.value = today.getMonth(); listenToMonthData(); });
         
         modalTimeInputs.forEach(input => { input.addEventListener('input', updateLiveBalance); });
-        modalDayType.addEventListener('change', updateLiveBalance); // Recalcula se mudar o tipo do dia
+        
+        // Exibir/Esconder o campo customizado no Modal
+        modalDayType.addEventListener('change', () => {
+            if (modalDayType.value === 'custom') modalCustomHoursGroup.classList.remove('hidden');
+            else modalCustomHoursGroup.classList.add('hidden');
+            updateLiveBalance();
+        });
+        modalCustomHours.addEventListener('input', updateLiveBalance);
+
+        // Exibir/Esconder o campo customizado na Calculadora
+        calcDayType.addEventListener('change', () => {
+            if (calcDayType.value === 'custom') calcCustomHoursGroup.classList.remove('hidden');
+            else calcCustomHoursGroup.classList.add('hidden');
+        });
 
         modalForm.addEventListener('submit', (e) => {
             e.preventDefault();
@@ -290,6 +321,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 times: [ modalTimeInputs[0].value, modalTimeInputs[1].value, modalTimeInputs[2].value, modalTimeInputs[3].value ],
                 dayType: modalDayType.value 
             };
+            
+            // Salva os minutos customizados caso essa seja a opção
+            if (modalDayType.value === 'custom') {
+                recordData.customMinutes = timeToMinutes(modalCustomHours.value);
+            }
             
             docRef.set({ records: { [currentDayToEdit]: recordData } }, { merge: true }).catch(error => console.error("Erro ao salvar registro:", error));
             closeModal();
@@ -329,8 +365,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             
-            // Verifica o tipo de dia selecionado na calculadora
-            const calcTargetMins = calcDayType.value === 'special' ? SPECIAL_WORKDAY_MINUTES : WORKDAY_MINUTES;
+            let calcTargetMins = WORKDAY_MINUTES;
+            if (calcDayType.value === 'special') calcTargetMins = SPECIAL_WORKDAY_MINUTES;
+            else if (calcDayType.value === 'custom') {
+                calcTargetMins = timeToMinutes(calcCustomHours.value);
+                if (calcTargetMins <= 0) {
+                    alert('Preencha a carga horária personalizada para calcular.');
+                    return;
+                }
+            }
 
             const year = parseInt(yearSelect.value);
             const month = parseInt(monthSelect.value);
@@ -371,10 +414,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 let targetMins = WORKDAY_MINUTES;
                 if (dayType === 'facultativo') targetMins = 0;
                 else if (dayType === 'special') targetMins = SPECIAL_WORKDAY_MINUTES;
+                else if (dayType === 'custom') targetMins = record.customMinutes || 0;
 
                 const totalWork = (timeToMinutes(record.times[1]) - timeToMinutes(record.times[0])) + (timeToMinutes(record.times[3]) - timeToMinutes(record.times[2])); 
                 const balance = totalWork - targetMins; 
-                let statusStr = dayType === 'special' ? 'Especial (8h-14h)' : (dayType === 'facultativo' ? 'Facultativo Trab.' : 'Trabalhado');
+                
+                let statusStr = 'Trabalhado';
+                if (dayType === 'special') statusStr = 'Especial (8h-14h)';
+                else if (dayType === 'facultativo') statusStr = 'Facultativo Trab.';
+                else if (dayType === 'custom') statusStr = `Personalizado (${minutesToTime(record.customMinutes)})`;
+                
                 row += `${statusStr},${record.times.join(',')},${formatMinutes(totalWork, false)},${formatMinutes(balance)}\n`; 
             } else { row += "Nao preenchido,,,,,,,\n"; } 
             csvContent += row; 

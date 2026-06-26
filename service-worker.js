@@ -1,4 +1,4 @@
-const CACHE_NAME = 'controle-de-ponto-cache-v13';
+const CACHE_NAME = 'controle-de-ponto-cache-v14';
 const urlsToCache = [
   '/',
   '/index.html',
