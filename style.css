@@ -42,9 +42,9 @@ header h1 { text-align: center; color: var(--primary-color); margin-bottom: 25px
 .report-item strong { display: block; font-size: 1.4em; }
 #export-csv-btn { width: 100%; background-color: var(--success-color); }
 
-/* Grade do Calendário */
-.calendar-header { display: grid; grid-template-columns: 80px 1fr 1fr; font-weight: bold; padding: 10px; border-bottom: 2px solid var(--primary-color); margin-bottom: 10px; }
-.day-card { display: grid; grid-template-columns: 80px 1fr 1fr; padding: 15px 10px; background-color: #fff; border-radius: 6px; margin-bottom: 8px; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: box-shadow 0.2s; }
+/* Grade do Calendário (Atualizado para 4 colunas) */
+.calendar-header { display: grid; grid-template-columns: 60px 1fr 90px 95px; font-weight: bold; padding: 10px; border-bottom: 2px solid var(--primary-color); margin-bottom: 10px; }
+.day-card { display: grid; grid-template-columns: 60px 1fr 90px 95px; padding: 15px 10px; background-color: #fff; border-radius: 6px; margin-bottom: 8px; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: box-shadow 0.2s; }
 .day-card.workday:hover { cursor: pointer; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
 .day-info { font-weight: bold; }
 .day-info span { font-weight: normal; font-size: 0.8em; color: #6c757d; display: block; }

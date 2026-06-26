@@ -15,8 +15,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalLiveBalance = document.getElementById('modal-live-balance');
     const modalDayType = document.getElementById('modal-day-type');
     const calcDayType = document.getElementById('calc-day-type');
-    
-    // NOVOS ELEMENTOS PERSONALIZADOS
     const modalCustomHoursGroup = document.getElementById('modal-custom-hours-group');
     const modalCustomHours = document.getElementById('modal-custom-hours');
     const calcCustomHoursGroup = document.getElementById('calc-custom-hours-group');
@@ -37,8 +35,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const exitResultEl = document.getElementById('exit-result');
 
     // --- ESTADO E CONSTANTES ---
-    const WORKDAY_MINUTES = 8 * 60; // 480 mins
-    const SPECIAL_WORKDAY_MINUTES = 345; // 5h 45m
+    const WORKDAY_MINUTES = 8 * 60;
+    const SPECIAL_WORKDAY_MINUTES = 345;
     const BALANCE_LIMIT_MINUTES = 90;
     const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
     let currentMonthData = { holidays: [], records: {} };
@@ -118,6 +116,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const date = new Date(year, month, 1);
         const daysInMonth = new Date(year, month + 1, 0).getDate();
         
+        // NOVO: Variável para rastrear o Saldo Acumulado
+        let accumulatedMinutes = 0; 
+        const today = new Date();
+        today.setHours(0,0,0,0); // Limpa as horas para comparar apenas os dias
+
         for (let day = 1; day <= daysInMonth; day++) {
             date.setDate(day);
             const dayOfWeek = date.getDay();
@@ -132,22 +135,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
             let dayBalance = '-';
             let dayTimes = 'Nenhum registro';
+            let balanceForToday = 0;
+            let hasRecordToday = false;
 
             if (dayType === 'facultativo' && (!record || !record.times || !record.times.some(t => t))) {
                 dayTimes = 'Ponto Facultativo';
                 dayBalance = '00:00';
                 card.classList.add('holiday'); 
+                hasRecordToday = true;
             } 
             else if (record && record.times && record.times.some(t => t)) {
+                hasRecordToday = true;
                 let targetMins = WORKDAY_MINUTES;
                 if (isHoliday || dayType === 'facultativo') targetMins = 0;
                 else if (dayType === 'special') targetMins = SPECIAL_WORKDAY_MINUTES;
                 else if (dayType === 'custom') targetMins = record.customMinutes || 0;
 
                 const totalWork = (timeToMinutes(record.times[1]) - timeToMinutes(record.times[0])) + (timeToMinutes(record.times[3]) - timeToMinutes(record.times[2]));
-                if (!isNaN(totalWork) && totalWork > 0) {
-                    const balance = totalWork - targetMins;
-                    dayBalance = formatMinutes(balance);
+                if (!isNaN(totalWork) && totalWork >= 0) {
+                    balanceForToday = totalWork - targetMins;
+                    dayBalance = formatMinutes(balanceForToday);
                 }
                 
                 dayTimes = `${record.times[0] || '--:--'}-${record.times[1] || '--:--'} / ${record.times[2] || '--:--'}-${record.times[3] || '--:--'}`;
@@ -156,7 +163,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (dayType === 'custom') dayTimes += ` ⚙️ (${minutesToTime(record.customMinutes)})`;
             }
 
-            card.innerHTML = `<div class="day-info">${day} <span>${date.toLocaleDateString('pt-BR', { weekday: 'short' })}</span></div><div class="day-times">${dayTimes}</div><div class="day-balance" style="color: ${dayBalance.startsWith('−') ? 'var(--danger-color)' : 'var(--success-color)'}">${dayBalance}</div>`;
+            // Soma o saldo do dia atual no acumulado geral
+            accumulatedMinutes += balanceForToday;
+
+            // Determina se devemos mostrar a coluna de Acumulado para não poluir dias futuros não preenchidos
+            let accumulatedStr = '-';
+            const isPastOrToday = date <= today;
+            
+            if (hasRecordToday || (isPastOrToday && accumulatedMinutes !== 0)) {
+                accumulatedStr = formatMinutes(accumulatedMinutes);
+            }
+
+            // Renderiza o Card (AGORA COM 4 DIVs - O último é o Acumulado)
+            card.innerHTML = `
+                <div class="day-info">${day} <span>${date.toLocaleDateString('pt-BR', { weekday: 'short' })}</span></div>
+                <div class="day-times">${dayTimes}</div>
+                <div class="day-balance" style="color: ${dayBalance.startsWith('−') ? 'var(--danger-color)' : (dayBalance === '-' ? 'inherit' : 'var(--success-color)')}">${dayBalance}</div>
+                <div class="day-accumulated" style="font-weight: bold; color: ${accumulatedStr.startsWith('−') ? 'var(--danger-color)' : (accumulatedStr === '-' || accumulatedStr === '+00:00' ? 'inherit' : 'var(--success-color)')}">${accumulatedStr}</div>
+            `;
             
             if (isWeekend) card.classList.add('weekend');
             if (isHoliday) { card.classList.add('holiday'); card.querySelector('.day-times').textContent = 'Feriado'; }
@@ -296,7 +320,6 @@ document.addEventListener('DOMContentLoaded', () => {
         
         modalTimeInputs.forEach(input => { input.addEventListener('input', updateLiveBalance); });
         
-        // Exibir/Esconder o campo customizado no Modal
         modalDayType.addEventListener('change', () => {
             if (modalDayType.value === 'custom') modalCustomHoursGroup.classList.remove('hidden');
             else modalCustomHoursGroup.classList.add('hidden');
@@ -304,7 +327,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         modalCustomHours.addEventListener('input', updateLiveBalance);
 
-        // Exibir/Esconder o campo customizado na Calculadora
         calcDayType.addEventListener('change', () => {
             if (calcDayType.value === 'custom') calcCustomHoursGroup.classList.remove('hidden');
             else calcCustomHoursGroup.classList.add('hidden');
@@ -322,7 +344,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 dayType: modalDayType.value 
             };
             
-            // Salva os minutos customizados caso essa seja a opção
             if (modalDayType.value === 'custom') {
                 recordData.customMinutes = timeToMinutes(modalCustomHours.value);
             }
@@ -400,16 +421,25 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     };
     
+    // EXPORTAR EXCEL COM NOVA COLUNA ACUMULADA
     const exportToCSV = (year, month) => {
-        const monthData = currentMonthData; let csvContent = "data:text/csv;charset=utf-8,Dia,Status,Entrada 1,Saida 1,Entrada 2,Saida 2,Total Trabalhado,Saldo Dia\n"; const daysInMonth = new Date(year, month + 1, 0).getDate(); 
+        const monthData = currentMonthData; 
+        let csvContent = "data:text/csv;charset=utf-8,Dia,Status,Entrada 1,Saida 1,Entrada 2,Saida 2,Total Trabalhado,Saldo Dia,Saldo Acumulado\n"; 
+        const daysInMonth = new Date(year, month + 1, 0).getDate(); 
+        
+        let accumulatedMinutesCSV = 0; // Para o CSV
+
         for (let day = 1; day <= daysInMonth; day++) { 
-            const date = new Date(year, month, day); const dayOfWeek = date.getDay(); const dayString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`; let row = `${day},`; 
+            const date = new Date(year, month, day); 
+            const dayOfWeek = date.getDay(); 
+            const dayString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`; 
+            let row = `${day},`; 
             const record = monthData.records ? monthData.records[day] : null; 
             const dayType = record && record.dayType ? record.dayType : 'normal';
 
-            if (dayOfWeek === 0 || dayOfWeek === 6) { row += "Fim de Semana,,,,,,,\n"; } 
-            else if ((monthData.holidays || []).includes(dayString)) { row += "Feriado,,,,,,,\n"; } 
-            else if (dayType === 'facultativo' && (!record || !record.times || !record.times.some(t => t))) { row += "Ponto Facultativo,,,,,,,\n"; }
+            if (dayOfWeek === 0 || dayOfWeek === 6) { row += `Fim de Semana,,,,,,,${formatMinutes(accumulatedMinutesCSV)}\n`; } 
+            else if ((monthData.holidays || []).includes(dayString)) { row += `Feriado,,,,,,,${formatMinutes(accumulatedMinutesCSV)}\n`; } 
+            else if (dayType === 'facultativo' && (!record || !record.times || !record.times.some(t => t))) { row += `Ponto Facultativo,,,,,,,${formatMinutes(accumulatedMinutesCSV)}\n`; }
             else if (record && record.times && record.times.some(t => t)) { 
                 let targetMins = WORKDAY_MINUTES;
                 if (dayType === 'facultativo') targetMins = 0;
@@ -418,17 +448,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const totalWork = (timeToMinutes(record.times[1]) - timeToMinutes(record.times[0])) + (timeToMinutes(record.times[3]) - timeToMinutes(record.times[2])); 
                 const balance = totalWork - targetMins; 
+                accumulatedMinutesCSV += balance;
                 
                 let statusStr = 'Trabalhado';
                 if (dayType === 'special') statusStr = 'Especial (8h-14h)';
                 else if (dayType === 'facultativo') statusStr = 'Facultativo Trab.';
                 else if (dayType === 'custom') statusStr = `Personalizado (${minutesToTime(record.customMinutes)})`;
                 
-                row += `${statusStr},${record.times.join(',')},${formatMinutes(totalWork, false)},${formatMinutes(balance)}\n`; 
-            } else { row += "Nao preenchido,,,,,,,\n"; } 
+                row += `${statusStr},${record.times.join(',')},${formatMinutes(totalWork, false)},${formatMinutes(balance)},${formatMinutes(accumulatedMinutesCSV)}\n`; 
+            } else { row += `Nao preenchido,,,,,,,${formatMinutes(accumulatedMinutesCSV)}\n`; } 
             csvContent += row; 
         } 
-        const encodedUri = encodeURI(csvContent); const link = document.createElement("a"); link.setAttribute("href", encodedUri); link.setAttribute("download", `relatorio_ponto_${year}_${monthNames[month]}.csv`); document.body.appendChild(link); link.click(); document.body.removeChild(link);
+        const encodedUri = encodeURI(csvContent); 
+        const link = document.createElement("a"); 
+        link.setAttribute("href", encodedUri); 
+        link.setAttribute("download", `relatorio_ponto_${year}_${monthNames[month]}.csv`); 
+        document.body.appendChild(link); 
+        link.click(); 
+        document.body.removeChild(link);
     };
 
     init();
